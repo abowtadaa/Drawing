@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Drawer</title>
+</head>
+
+<style>
+    input {
+        width: 4%;
+    }
+</style>
+
+<body>
+    <label  for="cmbxMenu">Menu: </label>
+    <select id="cmbxMenu" onchange = "drawModeChange(this)">
+        <option value="Rectangle">Rectangle</option>
+        <option value="Circle">Circle</option>
+        <option value="Polygon">Polygon</option>
+        <option value="Line">Line</option>
+        <option value="FreeHand">Free hand</option>
+        <option value="Delete">Remove</option>
+    </select>
+
+    <label for="txtAmount">Line width</label>
+    <input type="number" id="txtAmount" value="3" width = "10">
+
+    <button id = "setLineWidth"  onclick = "cmbsetLineWidth()">Set</button>
+
+    <button id ="removeCanvasInside" onclick ="removeInside()">Remove contents</button>
+
+    <br>
+
+    <canvas id="canvas" width="1000" height="550"  style="border:6px solid #000000; background-color: lightgrey"></canvas>
+
+<script>
+    //-------------------------------------------------------------------------------------
+    //------ Objects ----------------------------------------------------------------------
+    //-------------------------------------------------------------------------------------
+
+    var EMouseButton = {
+        Left:  0,
+        Right: 2
+    };
+
+    var EDrawMode = {   //Velger hvilken funksjon som skal lages
+        Rectangle:  0,
+        Circle:     1,
+        Polygon:    2,
+        Line:       3,
+        FreeHand:   4,
+        Delete:     5
+    };
+
+    //-------------------------------------------------------------------------------------
+    //------ Classes ----------------------------------------------------------------------
+    //-------------------------------------------------------------------------------------
+
+
+
+    var colorTable = ["purple","blue","red","orange","yellow","green","brown","cyan","#ff0066"];
+
+    function TRect (posX,posY,width,height){
+        this.left = posX;
+        this.top = posY;
+        this.width = width;
+        this.height = height;
+        this.bottom = null;
+        this.right = null;
+
+        //Metode
+
+        this.mouseHit = function (pos) {        //Bruker mouseHit til å kunne fjerne objektene i array over alle objekter som er laget
+            if((this.left < this.right)&&(this.top < this.bottom)) {
+                return !((pos.x < this.left) || (pos.x > this.right) || (pos.y < this.top) || (pos.y > this.bottom));
+            }else if((this.left > this.right)&&(this.top<this.bottom)){
+                return !((pos.x > this.left) || (pos.x < this.right) || (pos.y < this.top) || (pos.y > this.bottom))
+            }else if ((this.left < this.right)&&(this.top > this.bottom)){
+                return !((pos.x < this.left) || (pos.x > this.right) || (pos.y > this.top) || (pos.y < this.bottom))
+            }else{
+                return !((pos.x > this.left) || (pos.x < this.right) || (pos.y > this.top) || (pos.y < this.bottom));
+            }
+        };
+    }
+
+
+    function TPoint (pos){
+        this.x = pos.x;
+        this.y = pos.y;
+    }
+
+    function TRectangle (rectangle,pos) {
+        var lineWidth = strokeLine;
+        var rect = rectangle;
+        var fillColor = program.randomColor();
+        var coordinates = pos;
+
+        //Method
+
+        this.draw = function () {
+
+            ctx.fillStyle = fillColor;
+            ctx.fillRect(rect.left,rect.top,rect.width,rect.height);
+            ctx.strokeStyle ="black";
+            ctx.lineWidth = lineWidth;
+            ctx.strokeRect(rect.left,rect.top,rect.width,rect.height);
+        };
+
+        // ---------------------------------
+
+        this.bottomAndRight = function (pos) {
+            //Finne bottom og right i rect for å kunne bruke mouseHit.
+            rect.width = pos.x - rect.left;
+            rect.height = pos.y - rect.top;
+            rect.right = rect.left + rect.width;
+            rect.bottom = rect.top + rect.height;
+        };
+
+        // ---------------------------------
+
+        this.mouseHit = function (pos){
+            return rect.mouseHit(pos);
+        };
+
+        // ---------------------------------
+
+        this.getItemCoordinates = function(){   //Henter posisjonen til når det skal tegnes opp i canvasMouseMove funksjonen
+            return coordinates;
+        };
+    }
+
+    // New class ---------------------------------
+
+    function TCircle (pos){
+        var lineWidth = strokeLine;
+        var rect = null;
+        var position = new TPoint (pos);
+        var radius = null;
+        var color = program.randomColor();
+
+
+        // Metode
+
+        this.getItemCoordinates = function (){      //Henter posisjonen til når det skal tegnes opp i canvasMouseMove funksjonen
+            return position;
+        };
+
+        this.addRadius = function(pos){             //Må sette radius så kan tegne sirkelen
+            radius = pos.x - position.x;
+            var oldRadius = radius;
+            radius = Math.abs(radius);
+            rect = new TRect((position.x - radius),position.y,null,null);
+
+            if(oldRadius < 0) {    //Add radius + rect for mouse hit
+
+                rect.left= position.x + radius;
+                rect.width = radius *2;
+                rect.height = radius *2;
+                rect.right = rect.left - rect.width;
+                rect.bottom = rect.top - rect.height;
+                position.y -= radius;
+
+
+
+            }else{
+                rect.width =  radius *2;
+                rect.height = radius *2;
+                rect.right = rect.left + rect.width;
+                rect.bottom = rect.top + rect.height;
+                position.y += radius;
+
+            }
+
+
+        };
+
+        // ---------------------------------
+
+        this.draw = function (){
+            ctx.strokeStyle= "black";
+            ctx.lineWidth = lineWidth;
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(position.x,position.y,radius,0,2*Math.PI);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(position.x,position.y ,radius,0,2*Math.PI);
+            ctx.stroke();
+        };
+
+        // ---------------------------------
+
+        this.mouseHit = function(pos){
+            return rect.mouseHit(pos);
+        };
+    }
+
+    // New class ---------------------------------
+
+    function TPolygon (pos){
+        var lineWidth = strokeLine;
+        var rect = null;
+        var coordinates = pos;
+        var color = program.randomColor();
+        var size = null;
+        var numberOfSides = 6;
+
+
+        // Metode
+
+        this.getTheSize = function (pos){
+
+            size = (pos.x - coordinates.x);     //Bestemmer hvor stor polygonen blir.
+
+            rect = new TRect((coordinates.x - size),(coordinates.y - size),size *2,size *2);
+            rect.right = rect.left + rect.width;
+            rect.bottom = rect.top + rect.height;
+            //Lager Firkant rundt polygonen slik at det er mulig å bruke mouseHit, vis den skal fjernes
+
+
+        };
+        // ---------------------------------
+
+        this.getItemCoordinates = function(){       //Henter posisjonen til når det skal tegnes opp i canvasMouseMove funksjonen
+            return coordinates;
+        };
+
+        // ---------------------------------
+
+        this.getnumberOfSide = function (){         //Henter hvor mange sider polygonen skal ha, slik at den kan tegnes opp i canvasMouseMove funksjonen
+            return numberOfSides;
+        };
+
+        // ---------------------------------
+
+        this.draw = function () {
+
+            ctx.beginPath();
+            ctx.moveTo (coordinates.x +  size * Math.cos(0), (coordinates.y ) +  size *  Math.sin(0));
+            for (var i = 0; i <= numberOfSides;i ++ ) {             //Lager polygonen i for løkken.
+                ctx.lineTo (coordinates.x + size * Math.cos(i * 2 * Math.PI / numberOfSides),
+                           (coordinates.y )  + size * Math.sin(i * 2 * Math.PI / numberOfSides));
+            }
+
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = lineWidth;
+            ctx.stroke();
+            };
+
+        this.mouseHit = function (pos){
+            return rect.mouseHit(pos);
+        }
+    }
+
+
+    // New class ---------------------------------
+
+    function TLine (pos){
+        var lineWidth = strokeLine;
+        var rect = null;
+        var position1 = new TPoint(pos);
+        var position2;
+
+        //Metode
+
+        this.addlLinePath = function (pos){     //Lage rektangel for å kunne fjerne linjen.
+            position2 = new TPoint(pos);
+            rect = new TRect(position1.x,position1.y,(position2.x - position1.x),(position2.y - position1.y));
+            rect.right = rect.left + rect.width;
+            rect.bottom = rect.top + rect.height;
+        };
+
+        // ---------------------------------
+
+        this.draw = function () {
+            ctx.beginPath();
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = lineWidth;
+            ctx.moveTo(position1.x,position1.y);
+            ctx.lineTo(position2.x,position2.y);
+            ctx.stroke();
+        };
+
+        // ---------------------------------
+
+        this.getItemCoordinates = function (){      //Henter posisjonen til når det skal tegnes opp i canvasMouseMove funksjonen
+            return position1;
+        };
+
+        // ---------------------------------
+
+        this.mouseHit = function (pos){
+            return rect.mouseHit(pos);
+        };
+    }
+
+    // New class ---------------------------------
+
+    function TFreeHand (pos) {
+        var rect = null;
+        var allPosition = [];
+        var lineWidth = strokeLine;
+        var firstPosition = pos;
+
+
+        // Metode
+
+        this.addToArray = function (pos) {      /*Setter punktene inn i array på objektet slik at det blir lagret slik at det kan
+        bli hentet igjen i canvasMOuseMOve.
+        */
+            allPosition.push(pos);
+        };
+
+        this.getItemCoordinates = function (){      //Henter første posisjonen til når det skal tegnes opp i canvasMouseMove funksjonen
+            return firstPosition;
+        };
+
+        this.getAllPosition = function () {         //Henter alle posisjonene i array slik at man vil se hva som har blit tegnet.
+            return allPosition;
+        };
+
+        this.findRectangle = function () {
+
+            /*
+            Finner left, right, top og bottom så det skal være mulig å bruke mousehit funksjonen
+            */
+            var left = firstPosition.x, top = firstPosition.y,
+                right = firstPosition.x, bottom = firstPosition.y;
+
+            for(var i = 0;i < allPosition.length; i++) {
+
+                //Har to if setninger pga. både left og top eller right og bottom kan være true så kan ikke ha left og right i samme if statement.
+                if(allPosition[i].x < left){
+                    left = allPosition[i].x;
+                }else if(allPosition[i].y < top){
+                    top = allPosition[i].y;
+                }
+
+                if(allPosition[i].x > right){
+                    right = allPosition[i].x;
+                } else if(allPosition[i].y > bottom){
+                    bottom = allPosition[i].y;
+                }
+
+
+
+            }
+            rect = new TRect(left,top,null,null);
+            rect.right = right;
+            rect.bottom = bottom;
+
+
+
+        };
+
+        this.draw = function () {
+            var newPosition;
+            var positionUp;
+            for(var i = 0, o = -1; i < allPosition.length;i++, o++){
+
+
+
+                if(allPosition[i].x === firstPosition.x){      //Sjekker om en array punkt ikke er lik punktet som pekeren er på.
+                    newPosition = allPosition[0];
+                }else {
+                    newPosition = allPosition[i];
+                    positionUp = allPosition[o];
+                }
+
+                if(positionUp === undefined){       //Sjekker om positionUp ikke er undefined.
+                    positionUp = firstPosition;
+                    newPosition = firstPosition;
+                }
+
+                //Tegner en sirkel slik at det blir en hel trukket linje og ikke hull i linjen
+                radius = lineWidth / 2;
+                ctx.fillStyle = "black";
+                ctx.beginPath();
+                ctx.arc(newPosition.x,newPosition.y,radius,0,2*Math.PI);
+                ctx.fill();
+
+                ctx.strokeStyle = "black";
+                ctx.lineWidth = lineWidth;
+                ctx.beginPath();
+                ctx.moveTo(positionUp.x,positionUp.y);
+                ctx.lineTo(newPosition.x,newPosition.y);
+                ctx.stroke();
+            }
+
+        };
+
+        this.mouseHit = function (pos){
+            return rect.mouseHit(pos);
+        };
+    }
+
+
+    function TProgram (){
+        var items = [];
+        var item = null;
+        var itemMaker = EDrawMode.Rectangle;
+
+
+        // Metode
+
+        this.getDrawMode = function (){
+            return itemMaker;
+        };
+
+        // ---------------------------------
+
+        this.randomColor = function (){
+            var length = colorTable.length;
+            var color = Math.floor((Math.random() * length));
+
+            return colorTable[color];
+        };
+
+        // ---------------------------------
+
+        this.getItemCoordinates = function (){
+            return item.getItemCoordinates();
+        };
+
+        this.getAllPosition = function () {
+            return item.getAllPosition();
+        };
+
+        // ---------------------------------
+
+        this.getnumberOfSide = function (){
+            return item.getnumberOfSide();
+        };
+
+        this.addToArray = function (pos) {
+            item.addToArray(pos);
+        };
+
+        // ---------------------------------
+
+        this.drawBack = function () {               //Tegner alle objektene som er i programmets array utennom de som er fjernet
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            for (var i= 0; i < items.length;i++){
+                if(items[i]!== undefined) {        //Sjekker objektet ikke er undefined så ikke spillet crasjer
+                    items[i].draw();
+                }
+            }
+        };
+
+        // ---------------------------------
+
+        this.changeDrawMode = function (e){
+            switch (e){
+                case "Rectangle":
+                    if(itemMaker !== EDrawMode.Rectangle) {
+                        itemMaker = EDrawMode.Rectangle
+                    }
+                    break;
+                case "Circle":
+                    if(itemMaker !== EDrawMode.Circle) {
+                        itemMaker = EDrawMode.Circle
+                    }
+                    break;
+                case "Polygon":
+                    if(itemMaker !== EDrawMode.Polygon) {
+                        itemMaker = EDrawMode.Polygon
+                    }
+                    break;
+                case "Line":
+                    if(itemMaker !== EDrawMode.Line) {
+                        itemMaker = EDrawMode.Line
+                    }
+                    break;
+                case "FreeHand":
+                    if(itemMaker !==  EDrawMode.FreeHand) {
+                        itemMaker = EDrawMode.FreeHand
+                    }
+                    break;
+                case "Delete":
+                    if(itemMaker !== EDrawMode.Delete) {
+                        itemMaker = EDrawMode.Delete
+                    }
+                    break;
+            }
+        };
+
+        // ---------------------------------
+
+        this.resetCanvasContent = function () {     //Fjerner innholdet av programmets array slik at canvaset blir tomt.
+            items = [];
+            this.drawBack();
+        };
+
+
+
+        this.mouseDown = function (pos,mouseButton){        //Når musen er trykket ned begynner programmet å tegne og den oppdaterer med eventslistener "mousemove"
+            if(mouseButton === EMouseButton.Left){
+                switch (itemMaker){
+                    case EDrawMode.Rectangle:
+                        item = new TRectangle (new TRect(pos.x,pos.y,null,null),pos);
+                        canvas.addEventListener("mousemove", canvasMouseMove,false);
+
+                        break;
+
+                    case EDrawMode.Circle:
+                        item = new TCircle (pos);
+                        canvas.addEventListener("mousemove", canvasMouseMove,false);
+
+                        break;
+
+                    case EDrawMode.Polygon:
+                        item = new TPolygon (pos);
+                        canvas.addEventListener("mousemove", canvasMouseMove,false);
+                        break;
+
+                    case EDrawMode.Line:
+                        item = new TLine(pos);
+                        canvas.addEventListener("mousemove",canvasMouseMove,false);
+
+                        break;
+
+                    case EDrawMode.FreeHand:
+                        item = new TFreeHand(pos);
+                        canvas.addEventListener("mousemove",canvasMouseMove,false);
+
+                        break;
+                    case EDrawMode.Delete:
+                        for (var i=(items.length -1); i >= 0;i--){
+                            if(items[i]!== undefined) {     //Sjekker ikke undefined så ikke spillet crasjer
+                                if (items[i].mouseHit(pos)) {
+                                    delete items[i];
+                                    this.drawBack();    //Tegner på nytt alle objektene i "items" untatt de som er fjernet.
+                                    break;
+                                }
+                            }
+                        }
+                }
+            }
+        };
+
+        // ---------------------------------
+
+        this.mouseUp = function (pos,mouseButton){      //Når musen er trykke topp igjen slutter eventen "mousemove" og objektet blir
+            //suttet inn i Programmets array "items"
+            if(mouseButton === EMouseButton.Left) {
+                canvas.removeEventListener("mousemove", canvasMouseMove,false);
+                switch (itemMaker){
+                    case EDrawMode.Rectangle:
+                        item.bottomAndRight (pos);
+                        item.draw();
+                        items.push(item);
+                        break;
+                    case EDrawMode.Circle:
+                        item.addRadius(pos);
+                        item.draw();
+                        items.push(item);
+                        break;
+                    case EDrawMode.Polygon:
+                        item.getTheSize(pos);
+                        item.draw();
+                        items.push(item);
+                        break;
+
+                    case EDrawMode.FreeHand:
+                        item.draw();
+                        item.findRectangle();
+                        items.push(item);
+                        break;
+
+                    case EDrawMode.Line:
+                        item.addlLinePath(pos);
+                        item.draw();
+                        items.push(item);
+                        break;
+                }
+
+
+            }
+
+        };
+
+    }
+
+
+    //-------------------------------------------------------------------------------------
+    //------ Global Variables -------------------------------------------------------------
+    //-------------------------------------------------------------------------------------
+
+    var ctx = null;
+    var canvas = null;
+    var program = null;
+    var cmbxMenu = null;
+    var strokeLine = 3; //Definerer tykkelse på alle linjer.
+    //-------------------------------------------------------------------------------------
+    //------ Main code --------------------------------------------------------------------
+    //-------------------------------------------------------------------------------------
+
+    window.onload = function() {
+        canvas = document.getElementById("canvas");
+
+        canvas.addEventListener("mouseup", canvasMouseUp, false);
+        canvas.addEventListener("mousedown", canvasMouseDown, false);
+        cmbxMenu = document.getElementById("cmbxMenu");
+
+        ctx = canvas.getContext('2d');
+        program = new TProgram();
+    };
+
+
+    //-------------------------------------------------------------------------------------
+    //------ Functions --------------------------------------------------------------------
+    //-------------------------------------------------------------------------------------
+
+        function getMousePos(e) {
+            var rect = canvas.getBoundingClientRect();
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        }
+
+    //------------------------------------------------------------------------------------
+    //------ Events -----------------------------------------------------------------------
+    //-------------------------------------------------------------------------------------
+
+    function canvasMouseMove (e){       //
+            var mode = program.getDrawMode();
+            var position = program.getItemCoordinates();
+            var newPosition = getMousePos(e);   //
+            var radius = null;      //Radius til sirkel, polygon
+            var positionUp = null;
+            var lineWidth = strokeLine;
+            var allPosition = null;
+                program.drawBack();
+                newPosition.x = newPosition.x - position.x;
+                newPosition.y = newPosition.y - position.y;
+                switch (mode) {
+
+                    case EDrawMode.Rectangle:
+                        ctx.strokeStyle = "black";
+                        ctx.lineWidth = lineWidth;
+                        ctx.strokeRect(position.x, position.y, newPosition.x, newPosition.y);
+
+                        break;
+                    case EDrawMode.Circle:
+                        radius = newPosition.x;
+                        positionUp = position.y + radius;
+                        if (radius < 0) {
+                            radius = Math.abs(radius);
+                            positionUp = position.y - radius;
+                        }
+
+                        ctx.strokeStyle = "black";
+                        ctx.lineWidth = lineWidth;
+                        ctx.beginPath();
+                        ctx.arc(position.x, (positionUp), radius, 0, 2 * Math.PI);
+                        ctx.stroke();
+                        break;
+                    case EDrawMode.Polygon:
+                        var numberOfSides = program.getnumberOfSide();
+
+                        ctx.beginPath();
+                        ctx.moveTo (position.x +  newPosition.x * Math.cos(0), (position.y) +  newPosition.x *  Math.sin(0));
+
+                        for (var i = 0; i <= numberOfSides;i ++ ) {
+                            ctx.lineTo (position.x + newPosition.x* Math.cos(i * 2 * Math.PI / numberOfSides),
+                                       (position.y ) + newPosition.x * Math.sin(i * 2 * Math.PI / numberOfSides));
+                        }
+
+                        ctx.strokeStyle = "black";
+                        ctx.lineWidth = lineWidth;
+                        ctx.stroke();
+
+                        break;
+                    case EDrawMode.Line:
+                        newPosition = getMousePos(e);
+                        ctx.strokeStyle = "black";
+                        ctx.lineWidth = lineWidth;
+                        ctx.beginPath();
+                        ctx.moveTo(position.x,position.y);
+                        ctx.lineTo(newPosition.x,newPosition.y);
+                        ctx.stroke();
+                        break;
+                    case EDrawMode.FreeHand:
+
+                        allPosition = program.getAllPosition();
+
+                        if(allPosition[0] === undefined){
+                            positionUp = position;
+                        }else{
+                            positionUp = getMousePos(e)
+                        }
+                        program.addToArray(positionUp);
+
+
+                        allPosition = program.getAllPosition();
+                        var o;
+                        for(i = 0, o = -1; i < allPosition.length;i++, o++){
+
+                            if(allPosition[i].x === position.x){      //Sjekker om en array punkt ikke er lik første punktet.
+                                newPosition = allPosition[0];
+                            }else {
+                                newPosition = allPosition[i];
+                                positionUp = allPosition[o];
+                            }
+
+                            if(positionUp === undefined){       //Sjekker om positionUp ikke er undefined.
+                                positionUp = position;
+                                newPosition = position;
+                            }
+
+                            if(allPosition[i] === allPosition[0]){
+                                newPosition = position;
+                                positionUp = position;
+                            }
+
+                            //Tegner en sirkel slik at det blir en hel trukket linje og ikke hull i linjen
+                            radius = strokeLine / 2;
+                            ctx.fillStyle = "black";
+                            ctx.beginPath();
+                            ctx.arc(newPosition.x,newPosition.y,radius,0,2*Math.PI);
+                            ctx.fill();
+
+                            ctx.strokeStyle = "black";
+                            ctx.lineWidth = lineWidth;
+                            ctx.beginPath();
+                            ctx.moveTo(positionUp.x,positionUp.y);
+                            ctx.lineTo(newPosition.x,newPosition.y);
+                            ctx.stroke();
+
+
+                        }
+
+
+                        break;
+                }
+    }
+
+    function canvasMouseUp(e){
+        program.mouseUp(getMousePos(e),e.button);
+    }
+
+    function canvasMouseDown(e) {
+        program.mouseDown(getMousePos(e),e.button);
+    }
+
+    function drawModeChange()  {
+        program.changeDrawMode(cmbxMenu.value);
+    }
+
+    function cmbsetLineWidth() {
+        strokeLine = parseFloat(txtAmount.value);
+    }
+
+    function removeInside () {
+        program.resetCanvasContent();
+    }
+
+
+</script>
+
+
+</body>
+</html>
